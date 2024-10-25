@@ -2,13 +2,14 @@ import asyncio
 import logging
 import sys
 import os
-from aiogram import Bot, Dispatcher, html
-from aiogram.client.default import DefaultBotProperties
+from aiogram import Bot, Dispatcher
 from aiogram.enums import ParseMode
-from aiogram.filters import CommandStart, Command
+from aiogram.filters import Command
 from aiogram.types import Message
 import google.generativeai as genai
-import markdown2
+import time
+import re
+from aiogram import F
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -22,7 +23,6 @@ chat = model.start_chat(
 
 
 TELEGRAM_BOT_TOKEN = os.getenv("BOT_TOKEN")
-
 bot = Bot(token=TELEGRAM_BOT_TOKEN)
 dispatcher = Dispatcher()
 
@@ -134,6 +134,80 @@ generative_ai_prompt = '''You are a generative AI specialist preparing candidate
 - In response of this prompt list out common inerview question along with how to answer them and also some tips.'''
 
 
+def format_gemini_response(text: str) -> str:
+    """
+    Format Gemini's response to Telegram-compatible markdown
+    """
+    # Replace Gemini's markdown with Telegram-compatible markdown
+    formatted_text = text
+    
+    # Format headers (##) to bold text
+    formatted_text = re.sub(r'^##\s+(.+)$', r'*\1*', formatted_text, flags=re.MULTILINE)
+    
+    # Format bold text (remove extra asterisks)
+    formatted_text = re.sub(r'\*\*(.+?)\*\*', r'*\1*', formatted_text)
+    
+    # Format bullet points
+    formatted_text = re.sub(r'^\*\s+', '• ', formatted_text, flags=re.MULTILINE)
+    
+    # Escape special characters that could interfere with markdown
+    special_chars = ['_', '`', '[', ']', '(', ')', '~', '>', '#', '+', '-', '=', '|', '{', '}', '.', '!']
+    for char in special_chars:
+        formatted_text = formatted_text.replace(char, '\\' + char)
+    
+    # Clean up any double escapes
+    formatted_text = formatted_text.replace('\\\\', '\\')
+    
+    return formatted_text
+
+
+def ensure_markdown_entities_closed(text: str) -> str:
+    """
+    Ensure all markdown entities are properly closed in the text
+    """
+    # Count asterisks for bold/italic
+    asterisk_count = text.count('*')
+    if asterisk_count % 2 != 0:
+        text = text.replace('*', '')  # Remove incomplete formatting
+    
+    return text
+
+def split_message(text: str, max_length: int = 4096) -> list[str]:
+    """
+    Split a message into chunks while preserving markdown formatting
+    """
+    text = format_gemini_response(text)
+    messages = []
+    current_text = text
+    
+    while current_text:
+        if len(current_text) <= max_length:
+            messages.append(ensure_markdown_entities_closed(current_text))
+            break
+        
+        # Find a good splitting point
+        split_index = current_text.rfind('\n', 0, max_length)
+        if split_index == -1 or split_index < max_length // 2:
+            split_index = current_text.rfind('. ', 0, max_length)
+        if split_index == -1:
+            split_index = max_length
+        
+        # Get the chunk and ensure markdown is properly closed
+        chunk = current_text[:split_index]
+        chunk = ensure_markdown_entities_closed(chunk)
+        messages.append(chunk)
+        
+        # Prepare next chunk
+        current_text = current_text[split_index:].lstrip()
+        
+        # If there are any unclosed markdown entities from the previous chunk,
+        # we need to add them to the start of the next chunk
+        if chunk.count('*') % 2 != 0:
+            current_text = '*' + current_text
+    
+    return messages
+
+
 @dispatcher.message(Command(commands=['start', 'help']))
 async def command_start_handler(message: Message) -> None:
     """
@@ -187,137 +261,95 @@ async def command_start_handler(message: Message) -> None:
     Ready to start your interview prep? Choose a command to begin! 🎯
     '''
     await message.answer(start_message)
-# Helper function to split messages if they exceed Telegram's character limit
-def split_message(message, max_length=4096):
-    return [message[i:i+max_length] for i in range(0, len(message), max_length)]
+
 
 @dispatcher.message(Command(commands=['general_interview']))
 async def general_interview_handler(message: Message):
     response = chat.send_message(general_interview_prompt)
     messages = split_message(response.text)
     for msg in messages:
-        await message.answer(msg)
+        await message.answer(msg, parse_mode=ParseMode.MARKDOWN_V2)
+        time.sleep(1)
 
 @dispatcher.message(Command(commands=['ai_general']))
 async def ai_general_handler(message: Message):
     response = chat.send_message(ai_general_prompt)
     messages = split_message(response.text)
     for msg in messages:
-        await message.answer(msg)
+        await message.answer(msg, parse_mode=ParseMode.MARKDOWN_V2)
+        time.sleep(1)
+
 
 @dispatcher.message(Command(commands=['data_analysis']))
 async def data_analysis_handler(message: Message):
     response = chat.send_message(data_analysis_prompt)
     messages = split_message(response.text)
     for msg in messages:
-        await message.answer(msg)
+        await message.answer(msg, parse_mode=ParseMode.MARKDOWN_V2)
+        time.sleep(1)
+
 
 @dispatcher.message(Command(commands=['statistics']))
 async def statistics_handler(message: Message):
     response = chat.send_message(statistics_prompt)
     messages = split_message(response.text)
     for msg in messages:
-        await message.answer(msg)
+        await message.answer(msg, parse_mode=ParseMode.MARKDOWN_V2)
+        time.sleep(1)
+
 
 @dispatcher.message(Command(commands=['machine_learning']))
 async def machine_learning_handler(message: Message):
     response = chat.send_message(machine_learning_prompt)
     messages = split_message(response.text)
     for msg in messages:
-        await message.answer(msg)
+        await message.answer(msg, parse_mode=ParseMode.MARKDOWN_V2)
+        time.sleep(1)
+
 
 @dispatcher.message(Command(commands=['deep_learning']))
 async def deep_learning_handler(message: Message):
     response = chat.send_message(deep_learning_prompt)
     messages = split_message(response.text)
     for msg in messages:
-        await message.answer(msg)
+        await message.answer(msg, parse_mode=ParseMode.MARKDOWN_V2)
+        time.sleep(1)
+
 
 @dispatcher.message(Command(commands=['nlp']))
 async def nlp_handler(message: Message):
     response = chat.send_message(nlp_prompt)
     messages = split_message(response.text)
     for msg in messages:
-        await message.answer(msg)
+        await message.answer(msg, parse_mode=ParseMode.MARKDOWN_V2)
+        time.sleep(1)
+
 
 @dispatcher.message(Command(commands=['computer_vision']))
 async def computer_vision_handler(message: Message):
     response = chat.send_message(computer_vision_prompt)
     messages = split_message(response.text)
     for msg in messages:
-        await message.answer(msg)
+        await message.answer(msg, parse_mode=ParseMode.MARKDOWN_V2)
+        time.sleep(1)
+
 
 @dispatcher.message(Command(commands=['generative_ai']))
 async def generative_ai_handler(message: Message):
     response = chat.send_message(generative_ai_prompt)
     messages = split_message(response.text)
     for msg in messages:
-        await message.answer(msg)
+        await message.answer(msg, parse_mode=ParseMode.MARKDOWN_V2)
+        time.sleep(1)
 
-'''@dispatcher.message(Command(commands=['general_interview']))
-async def general_interview_handler(message: Message):
-    response = chat.send_message(general_interview_prompt)
-    await message.answer(response.text)
-
-
-@dispatcher.message(Command(commands=['ai_general']))
-async def ai_general_handler(message: Message):
-    response = chat.send_message(ai_general_prompt)
-    await message.answer(response.text)
-
-
-@dispatcher.message(Command(commands=['data_analysis']))
-async def data_analysis_handler(message: Message):
-    response = chat.send_message(data_analysis_prompt)
-    await message.answer(response.text)
-
-
-@dispatcher.message(Command(commands=['statistics']))
-async def statistics_handler(message: Message):
-    response = chat.send_message(statatistics_prompt)
-    await message.answer(response.text)
-
-
-@dispatcher.message(Command(commands=['machine_learning']))
-async def machine_learning_handler(message: Message):
-    response = chat.send_message(machine_learning_prompt)
-    await message.answer(response.text)
-
-
-@dispatcher.message(Command(commands=['deep_learning']))
-async def deep_learning_handler(message: Message):
-    response = chat.send_message(deep_learning_prompt)
-    await message.answer(response.text)
-
-
-@dispatcher.message(Command(commands=['nlp']))
-async def nlp_handler(message: Message):
-    response = chat.send_message(nlp_prompt)
-    await message.answer(response.text)
-
-
-@dispatcher.message(Command(commands=['computer_vision']))
-async def computer_vision_handler(message: Message):
-    response = chat.send_message(computer_vision_prompt)
-    await message.answer(response.text)
-
-
-@dispatcher.message(Command(commands=['generative_ai']))
-async def generative_ai_handler(message: Message):
-    response = chat.send_message(generative_ai_prompt)
-    await message.answer(response.text)
-'''
-
-
-@dispatcher.message()
-async def echo_handler(message: Message) -> None:
-    """
-    Handler will forward receive a message back to the sender
-
-    By default, message handler will handle all message types (like a text, photo, sticker etc.)
-    """
-    response = chat.send_message(message)
-    await message.answer(response.text)
+@dispatcher.message(F.text & ~F.command)
+async def query_handler(message: Message) -> None:
+    
+    response = chat.send_message(message.text)
+    messages = split_message(response.text)
+    for msg in messages:
+        await message.answer(msg, parse_mode=ParseMode.MARKDOWN_V2)
+        time.sleep(1)
 
 
 async def main() -> None:
